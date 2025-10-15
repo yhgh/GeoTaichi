@@ -76,6 +76,16 @@ The regression harness in [`tests_warp/test_regression.py`](tests_warp/test_regr
 
 The examples honor the legacy command-line arguments and output cadence so that downstream automation continues to function.
 
+### Quick Visual Validation
+
+When you only need to verify that the Warp port reproduces representative DEM, MPM, and MPDEM behaviour, run the bundled demo script:
+
+```bash
+python demo/generate_visualizations.py --arch cpu --output demo/outputs
+```
+
+The command mirrors the regression scenarios, saving `.vtu` snapshots under `demo/outputs/` that can be opened in ParaView. Use `--scenarios` to limit the run to a subset and `--frame-interval` to control the number of saved frames.
+
 ## Regression & Benchmarking
 
 The regression entry point `python bench_warp/run_regression.py` executes DEM, MPM, and MPDEM micro scenarios and writes refreshed snapshots to `tests_warp/regression_snapshots.json`. Continuous integration should run `pytest tests_warp/test_regression.py` on every target environment to ensure numerical drift stays within tolerance.

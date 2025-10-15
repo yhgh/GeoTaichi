@@ -8,3 +8,4 @@ recursive-include third_party/pyevtk *.py
 recursive-include examples_warp *.py *.stl
 recursive-include bench_warp *.py
 recursive-include tests_warp *.py *.json
+recursive-include demo *.py *.md

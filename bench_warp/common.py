@@ -61,13 +61,27 @@ def update_snapshot(name: str, metrics: Mapping[str, object]) -> None:
     SNAPSHOT_PATH.write_text(json.dumps(data, indent=2, sort_keys=True))
 
 
-def timed_step(step_fn, count: int) -> float:
-    """Execute ``step_fn`` ``count`` times and return the average seconds per step."""
+def timed_step(step_fn, count: int, *, frame_callback=None) -> float:
+    """Execute ``step_fn`` ``count`` times and return the average seconds per step.
+
+    Parameters
+    ----------
+    step_fn:
+        Callable executed once per iteration.
+    count:
+        Number of iterations to perform.
+    frame_callback:
+        Optional callable taking the current zero-based step index. Invoked after
+        each ``step_fn`` execution to allow callers to dump diagnostic artefacts
+        such as VTK snapshots. The callback is ignored when ``None``.
+    """
 
     start = time.perf_counter()
-    for _ in range(count):
+    for step in range(count):
         step_fn()
         wp.synchronize()
+        if frame_callback is not None:
+            frame_callback(step)
     elapsed = time.perf_counter() - start
     return elapsed / max(count, 1)
 
