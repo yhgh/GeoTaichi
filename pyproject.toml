@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=68", "wheel", "build"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "geowarp"
+version = "0.1.0"
+description = "Warp backend compatible with the GeoTaichi API"
+readme = "README_warp.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+authors = [
+    { name = "GeoTaichi Developers" },
+]
+keywords = ["geomechanics", "warp", "mpm", "dem", "simulation"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+dependencies = [
+    "warp>=0.12.0",
+    "numpy>=1.24",
+    "trimesh>=4.5.1",
+    "shapely>=2.0",
+    "imageio>=2.35",
+    "rich>=13.0",
+    "pynvml>=11.4",
+]
+
+[project.urls]
+Homepage = "https://github.com/Yihao-Shi/GeoTaichi"
+Documentation = "https://github.com/Yihao-Shi/GeoTaichi/blob/main/README_warp.md"
+Source = "https://github.com/Yihao-Shi/GeoTaichi"
+
+[tool.setuptools.packages.find]
+include = ["geowarp*", "third_party.pyevtk*"]
+exclude = ["example*", "examples_warp*", "tests*", "bench_warp*", "docs*", "migration*"]
+
+[tool.setuptools]
+zip-safe = false

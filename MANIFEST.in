@@ -1,0 +1,10 @@
+include LICENSE
+include README_warp.md
+include THIRD_PARTY_NOTICES.md
+include requirements-warp.txt
+include geowarp/py.typed
+recursive-include geowarp *.py
+recursive-include third_party/pyevtk *.py
+recursive-include examples_warp *.py *.stl
+recursive-include bench_warp *.py
+recursive-include tests_warp *.py *.json
