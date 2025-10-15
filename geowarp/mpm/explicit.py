@@ -33,16 +33,25 @@ def _node_index(ix: int, iy: int, iz: int, nx: int, ny: int, nz: int) -> int:
 @wp.func
 def weight_linear(
     xp: wp.vec3f,
-    base: wp.vec3i,
-    dx: float,
+    origin: wp.vec3f,
+    inv_dx: float,
     gx: int,
     gy: int,
     gz: int,
 ) -> LinearWeights:
     """Return trilinear weights for the eight surrounding grid nodes."""
 
-    cell = xp / dx
-    base_vec = wp.vec3f(float(base.x), float(base.y), float(base.z))
+    cell = (xp - origin) * inv_dx
+
+    bx = int(wp.floor(cell.x))
+    by = int(wp.floor(cell.y))
+    bz = int(wp.floor(cell.z))
+
+    bx = wp.max(-1, wp.min(bx, gx - 1))
+    by = wp.max(-1, wp.min(by, gy - 1))
+    bz = wp.max(-1, wp.min(bz, gz - 1))
+
+    base_vec = wp.vec3f(float(bx), float(by), float(bz))
     fx = cell - base_vec
     fx_x = wp.max(0.0, wp.min(fx.x, 1.0))
     fx_y = wp.max(0.0, wp.min(fx.y, 1.0))
@@ -55,12 +64,12 @@ def weight_linear(
     wz0 = 1.0 - fx_z
     wz1 = fx_z
 
-    ix0 = base.x
-    ix1 = base.x + 1
-    iy0 = base.y
-    iy1 = base.y + 1
-    iz0 = base.z
-    iz1 = base.z + 1
+    ix0 = bx
+    ix1 = bx + 1
+    iy0 = by
+    iy1 = by + 1
+    iz0 = bz
+    iz1 = bz + 1
 
     weights = LinearWeights()
     weights.nodes0 = wp.vec4i(
@@ -90,14 +99,28 @@ def weight_linear(
     return weights
 
 
+@wp.func
+def _clamp_position(
+    pos: wp.vec3f,
+    lower: wp.vec3f,
+    upper: wp.vec3f,
+) -> wp.vec3f:
+    eps = 1.0e-6
+    return wp.vec3f(
+        wp.max(lower.x + eps, wp.min(upper.x - eps, pos.x)),
+        wp.max(lower.y + eps, wp.min(upper.y - eps, pos.y)),
+        wp.max(lower.z + eps, wp.min(upper.z - eps, pos.z)),
+    )
+
+
 @wp.kernel
 def clear_grid(
     grid_m: wp.array(dtype=float),
-    grid_p: wp.array(dtype=wp.vec3f),
+    grid_v: wp.array(dtype=wp.vec3f),
 ):
     gid = wp.tid()
     grid_m[gid] = 0.0
-    grid_p[gid] = wp.vec3f(0.0, 0.0, 0.0)
+    grid_v[gid] = wp.vec3f(0.0, 0.0, 0.0)
 
 
 @wp.kernel
@@ -106,20 +129,16 @@ def p2g(
     v: wp.array(dtype=wp.vec3f),
     m: wp.array(dtype=float),
     grid_m: wp.array(dtype=float),
-    grid_p: wp.array(dtype=wp.vec3f),
-    dx: float,
+    grid_v: wp.array(dtype=wp.vec3f),
+    origin: wp.vec3f,
+    inv_dx: float,
     nx: int,
     ny: int,
     nz: int,
 ):
     i = wp.tid()
     xp = x[i]
-    base = wp.vec3i(
-        int(wp.floor(xp.x / dx)),
-        int(wp.floor(xp.y / dx)),
-        int(wp.floor(xp.z / dx)),
-    )
-    weights = weight_linear(xp, base, dx, nx, ny, nz)
+    weights = weight_linear(xp, origin, inv_dx, nx, ny, nz)
 
     for k in wp.static_range(8):
         if k == 0:
@@ -149,23 +168,70 @@ def p2g(
 
         contrib_m = m[i] * w
         wp.atomic_add(grid_m, node, contrib_m)
-        wp.atomic_add(grid_p, node, v[i] * contrib_m)
+        wp.atomic_add(grid_v, node, v[i] * contrib_m)
+
+
+@wp.kernel
+def normalize_grid(
+    grid_m: wp.array(dtype=float),
+    grid_v: wp.array(dtype=wp.vec3f),
+):
+    gid = wp.tid()
+    mass = grid_m[gid]
+    if mass > 0.0:
+        grid_v[gid] = grid_v[gid] / mass
+    else:
+        grid_v[gid] = wp.vec3f(0.0, 0.0, 0.0)
+
+
+@wp.kernel
+def copy_grid(
+    src: wp.array(dtype=wp.vec3f),
+    dst: wp.array(dtype=wp.vec3f),
+):
+    gid = wp.tid()
+    dst[gid] = src[gid]
 
 
 @wp.kernel
 def grid_op(
     grid_m: wp.array(dtype=float),
-    grid_p: wp.array(dtype=wp.vec3f),
+    grid_v: wp.array(dtype=wp.vec3f),
     gravity: wp.vec3f,
     dt: float,
+    damping: float,
+    nx: int,
+    ny: int,
+    nz: int,
 ):
     gid = wp.tid()
-    mass = grid_m[gid]
-    if mass > 0.0:
-        momentum = grid_p[gid]
-        vel = momentum / mass
-        vel = vel + gravity * dt
-        grid_p[gid] = vel * mass
+    if grid_m[gid] <= 0.0:
+        grid_v[gid] = wp.vec3f(0.0, 0.0, 0.0)
+        return
+
+    vel = grid_v[gid] + gravity * dt
+    vel = vel * (1.0 - damping)
+
+    nx_nodes = nx + 1
+    ny_nodes = ny + 1
+    ix = gid % nx_nodes
+    iy = (gid // nx_nodes) % ny_nodes
+    iz = gid // (nx_nodes * ny_nodes)
+
+    if ix == 0 and vel.x < 0.0:
+        vel.x = 0.0
+    if ix == nx and vel.x > 0.0:
+        vel.x = 0.0
+    if iy == 0 and vel.y < 0.0:
+        vel.y = 0.0
+    if iy == ny and vel.y > 0.0:
+        vel.y = 0.0
+    if iz == 0 and vel.z < 0.0:
+        vel.z = 0.0
+    if iz == nz and vel.z > 0.0:
+        vel.z = 0.0
+
+    grid_v[gid] = vel
 
 
 @wp.kernel
@@ -173,23 +239,25 @@ def g2p(
     x: wp.array(dtype=wp.vec3f),
     v: wp.array(dtype=wp.vec3f),
     grid_m: wp.array(dtype=float),
-    grid_p: wp.array(dtype=wp.vec3f),
-    dx: float,
+    grid_v: wp.array(dtype=wp.vec3f),
+    grid_v_prev: wp.array(dtype=wp.vec3f),
+    origin: wp.vec3f,
+    inv_dx: float,
     nx: int,
     ny: int,
     nz: int,
     dt: float,
+    flip_alpha: float,
+    domain_min: wp.vec3f,
+    domain_max: wp.vec3f,
 ):
     i = wp.tid()
     xp = x[i]
-    base = wp.vec3i(
-        int(wp.floor(xp.x / dx)),
-        int(wp.floor(xp.y / dx)),
-        int(wp.floor(xp.z / dx)),
-    )
-    weights = weight_linear(xp, base, dx, nx, ny, nz)
+    weights = weight_linear(xp, origin, inv_dx, nx, ny, nz)
 
     v_pic = wp.vec3f(0.0, 0.0, 0.0)
+    v_flip = wp.vec3f(0.0, 0.0, 0.0)
+
     for k in wp.static_range(8):
         if k == 0:
             node = weights.nodes0.x
@@ -216,13 +284,17 @@ def g2p(
             node = weights.nodes1.w
             w = weights.weights1.w
 
-        mass = grid_m[node]
-        if mass > 0.0:
-            node_v = grid_p[node] / mass
+        if grid_m[node] > 0.0:
+            node_v = grid_v[node]
+            prev_v = grid_v_prev[node]
             v_pic = v_pic + node_v * w
+            v_flip = v_flip + (node_v - prev_v) * w
 
-    v[i] = v_pic
-    x[i] = xp + v_pic * dt
+    new_v = v_pic * (1.0 - flip_alpha) + (v[i] + v_flip) * flip_alpha
+    new_x = _clamp_position(xp + new_v * dt, domain_min, domain_max)
+
+    v[i] = new_v
+    x[i] = new_x
 
 
 @dataclass
@@ -234,8 +306,11 @@ class ExplicitMPMSolver:
     masses: Optional[Sequence[float]] = None
     dx: float = 0.1
     grid_dims: Tuple[int, int, int] = (16, 16, 16)
+    grid_origin: Sequence[float] = (0.0, 0.0, 0.0)
     device: Optional[str] = None
     gravity: Sequence[float] = (0.0, -9.81, 0.0)
+    flip_alpha: float = 0.0
+    grid_damping: float = 0.0
 
     def __post_init__(self) -> None:
         dev = self.device or wp.get_device()
@@ -256,45 +331,111 @@ class ExplicitMPMSolver:
         nx, ny, nz = self.grid_dims
         nodes = (nx + 1) * (ny + 1) * (nz + 1)
         self.grid_m = wp.zeros(nodes, dtype=float, device=dev)
-        self.grid_p = wp.zeros(nodes, dtype=wp.vec3f, device=dev)
+        self.grid_v = wp.zeros(nodes, dtype=wp.vec3f, device=dev)
+        self.grid_v_prev = wp.zeros(nodes, dtype=wp.vec3f, device=dev)
 
         self.device = dev
+        self.dx = float(self.dx)
+        self.inv_dx = 1.0 / self.dx
+        self.origin = wp.vec3f(*self.grid_origin)
+        self.domain_min = self.origin
+        extent = wp.vec3f(float(nx) * self.dx, float(ny) * self.dx, float(nz) * self.dx)
+        self.domain_max = wp.vec3f(
+            self.origin.x + extent.x,
+            self.origin.y + extent.y,
+            self.origin.z + extent.z,
+        )
         self.gravity_vec = wp.vec3f(*self.gravity)
 
     def set_gravity(self, gravity: Sequence[float]) -> None:
         self.gravity_vec = wp.vec3f(*gravity)
 
-    def step(self, dt: float) -> None:
+    def step(
+        self,
+        dt: float,
+        *,
+        gravity: Optional[Sequence[float]] = None,
+        flip_alpha: Optional[float] = None,
+    ) -> None:
         nx, ny, nz = self.grid_dims
+        grav_vec = self.gravity_vec if gravity is None else wp.vec3f(*gravity)
+        flip = self.flip_alpha if flip_alpha is None else float(flip_alpha)
 
-        # Reset grid buffers.
+        nodes = self.grid_m.shape[0]
+
         wp.launch(
             clear_grid,
-            dim=self.grid_m.shape[0],
-            inputs=[self.grid_m, self.grid_p],
+            dim=nodes,
+            inputs=[self.grid_m, self.grid_v],
             device=self.device,
         )
 
-        # Particle-to-grid.
         wp.launch(
             p2g,
             dim=self.x.shape[0],
-            inputs=[self.x, self.v, self.m, self.grid_m, self.grid_p, self.dx, nx, ny, nz],
+            inputs=[
+                self.x,
+                self.v,
+                self.m,
+                self.grid_m,
+                self.grid_v,
+                self.origin,
+                self.inv_dx,
+                nx,
+                ny,
+                nz,
+            ],
             device=self.device,
         )
 
-        # Grid operations (gravity, boundary conditions placeholder).
+        wp.launch(
+            normalize_grid,
+            dim=nodes,
+            inputs=[self.grid_m, self.grid_v],
+            device=self.device,
+        )
+
+        wp.launch(
+            copy_grid,
+            dim=nodes,
+            inputs=[self.grid_v, self.grid_v_prev],
+            device=self.device,
+        )
+
         wp.launch(
             grid_op,
-            dim=self.grid_m.shape[0],
-            inputs=[self.grid_m, self.grid_p, self.gravity_vec, dt],
+            dim=nodes,
+            inputs=[
+                self.grid_m,
+                self.grid_v,
+                grav_vec,
+                dt,
+                self.grid_damping,
+                nx,
+                ny,
+                nz,
+            ],
             device=self.device,
         )
 
-        # Grid-to-particle.
         wp.launch(
             g2p,
             dim=self.x.shape[0],
-            inputs=[self.x, self.v, self.grid_m, self.grid_p, self.dx, nx, ny, nz, dt],
+            inputs=[
+                self.x,
+                self.v,
+                self.grid_m,
+                self.grid_v,
+                self.grid_v_prev,
+                self.origin,
+                self.inv_dx,
+                nx,
+                ny,
+                nz,
+                dt,
+                flip,
+                self.domain_min,
+                self.domain_max,
+            ],
             device=self.device,
         )
