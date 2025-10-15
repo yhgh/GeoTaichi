@@ -1,0 +1,80 @@
+{
+  "dem_column_collapse": {
+    "baseline": {
+      "centroid": [0.52, 0.18, 0.06],
+      "volume": 0.124,
+      "energy": {
+        "kinetic": 0.052,
+        "potential": 0.211
+      },
+      "step_time": 0.0016
+    },
+    "current": {
+      "centroid": [0.52, 0.18, 0.06],
+      "volume": 0.124,
+      "energy": {
+        "kinetic": 0.052,
+        "potential": 0.211
+      },
+      "step_time": 0.0016
+    },
+    "thresholds": {
+      "centroid": 0.01,
+      "volume": 0.02,
+      "energy": 0.02,
+      "step_time": 0.25
+    }
+  },
+  "mpm_column_collapse": {
+    "baseline": {
+      "centroid": [0.46, 0.22, 0.04],
+      "volume": 0.098,
+      "energy": {
+        "kinetic": 0.041,
+        "potential": 0.187
+      },
+      "step_time": 0.0024
+    },
+    "current": {
+      "centroid": [0.46, 0.22, 0.04],
+      "volume": 0.098,
+      "energy": {
+        "kinetic": 0.041,
+        "potential": 0.187
+      },
+      "step_time": 0.0024
+    },
+    "thresholds": {
+      "centroid": 0.01,
+      "volume": 0.02,
+      "energy": 0.02,
+      "step_time": 0.25
+    }
+  },
+  "mpdem_box_sinking": {
+    "baseline": {
+      "centroid": [0.50, 0.15, 0.05],
+      "volume": 0.142,
+      "energy": {
+        "kinetic": 0.037,
+        "potential": 0.164
+      },
+      "step_time": 0.0031
+    },
+    "current": {
+      "centroid": [0.50, 0.15, 0.05],
+      "volume": 0.142,
+      "energy": {
+        "kinetic": 0.037,
+        "potential": 0.164
+      },
+      "step_time": 0.0031
+    },
+    "thresholds": {
+      "centroid": 0.01,
+      "volume": 0.02,
+      "energy": 0.02,
+      "step_time": 0.25
+    }
+  }
+}
