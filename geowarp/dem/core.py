@@ -8,10 +8,12 @@ Warp's `HashGrid` acceleration structure to find neighbours.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Optional, Sequence
+from dataclasses import dataclass, field
+from typing import List, Optional, Sequence
 
 import warp as wp
+
+from .boundary import PeriodicBoundary, dem_contacts_periodic
 
 
 @wp.kernel
@@ -91,6 +93,8 @@ class DEMSystem:
     device: Optional[str] = None
     gravity: Sequence[float] = (0.0, -9.81, 0.0)
     damping: float = 0.0
+    periodic: Optional[PeriodicBoundary] = None
+    boundaries: Sequence[object] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         dev = self.device or wp.get_device()
@@ -108,11 +112,23 @@ class DEMSystem:
         self.grid = wp.HashGrid(dim_x=128, dim_y=128, dim_z=128, device=dev)
         self._gravity_vec = wp.vec3f(*self.gravity)
         self.device = dev
+        self._periodic = self.periodic
+        self._boundaries: List[object] = list(self.boundaries)
 
     def set_gravity(self, gravity: Sequence[float]) -> None:
         """Update the global gravity vector."""
 
         self._gravity_vec = wp.vec3f(*gravity)
+
+    def set_periodic_boundary(self, periodic: Optional[PeriodicBoundary]) -> None:
+        """Attach or clear the periodic boundary handler."""
+
+        self._periodic = periodic
+
+    def add_boundary(self, boundary: object) -> None:
+        """Register a mesh or volume boundary condition."""
+
+        self._boundaries.append(boundary)
 
     def step(
         self,
@@ -129,22 +145,47 @@ class DEMSystem:
         # Rebuild the spatial hash grid with the current particle state.
         self.grid.build(points=self.x, radius=search_radius)
 
-        # Compute pairwise forces.
-        wp.launch(
-            dem_contacts,
-            dim=self.x.shape[0],
-            inputs=[
-                self.grid.id,
-                self.x,
-                self.v,
-                self.r,
-                self.force,
-                search_radius,
-                k_n,
-                c_n,
-            ],
-            device=self.device,
-        )
+        # Compute pairwise forces with optional periodic tiling.
+        periodic = self._periodic
+        if periodic is None or periodic.offset_count() == 0:
+            wp.launch(
+                dem_contacts,
+                dim=self.x.shape[0],
+                inputs=[
+                    self.grid.id,
+                    self.x,
+                    self.v,
+                    self.r,
+                    self.force,
+                    search_radius,
+                    k_n,
+                    c_n,
+                ],
+                device=self.device,
+            )
+        else:
+            wp.launch(
+                dem_contacts_periodic,
+                dim=self.x.shape[0],
+                inputs=[
+                    self.grid.id,
+                    self.x,
+                    self.v,
+                    self.r,
+                    self.force,
+                    search_radius,
+                    k_n,
+                    c_n,
+                    periodic.offsets,
+                    periodic.offset_count(),
+                ],
+                device=self.device,
+            )
+
+        # Apply additional boundary contacts.
+        for boundary in self._boundaries:
+            if hasattr(boundary, "apply"):
+                boundary.apply(self)
 
         # Integrate velocities and positions.
         wp.launch(
@@ -161,3 +202,6 @@ class DEMSystem:
             ],
             device=self.device,
         )
+
+        if periodic is not None:
+            periodic.wrap(self.x)
