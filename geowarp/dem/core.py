@@ -9,7 +9,7 @@ Warp's `HashGrid` acceleration structure to find neighbours.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Sequence
+from typing import Callable, List, Optional, Sequence
 
 import warp as wp
 
@@ -136,6 +136,8 @@ class DEMSystem:
         search_radius: float,
         k_n: float,
         c_n: float,
+        *,
+        contact_callback: Optional[Callable[["DEMSystem"], None]] = None,
     ) -> None:
         """Advance the DEM system by one timestep."""
 
@@ -186,6 +188,9 @@ class DEMSystem:
         for boundary in self._boundaries:
             if hasattr(boundary, "apply"):
                 boundary.apply(self)
+
+        if contact_callback is not None:
+            contact_callback(self)
 
         # Integrate velocities and positions.
         wp.launch(

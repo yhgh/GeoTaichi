@@ -297,6 +297,18 @@ def g2p(
     x[i] = new_x
 
 
+@wp.kernel
+def apply_external_forces(
+    v: wp.array(dtype=wp.vec3f),
+    m: wp.array(dtype=float),
+    f: wp.array(dtype=wp.vec3f),
+    dt: float,
+):
+    i = wp.tid()
+    mass = wp.max(m[i], 1.0e-8)
+    v[i] = v[i] + f[i] * (dt / mass)
+
+
 @dataclass
 class ExplicitMPMSolver:
     """Minimal explicit MPM integrator using linear shape functions."""
@@ -356,12 +368,21 @@ class ExplicitMPMSolver:
         *,
         gravity: Optional[Sequence[float]] = None,
         flip_alpha: Optional[float] = None,
+        external_forces: Optional[wp.array] = None,
     ) -> None:
         nx, ny, nz = self.grid_dims
         grav_vec = self.gravity_vec if gravity is None else wp.vec3f(*gravity)
         flip = self.flip_alpha if flip_alpha is None else float(flip_alpha)
 
         nodes = self.grid_m.shape[0]
+
+        if external_forces is not None:
+            wp.launch(
+                apply_external_forces,
+                dim=self.x.shape[0],
+                inputs=[self.v, self.m, external_forces, dt],
+                device=self.device,
+            )
 
         wp.launch(
             clear_grid,
