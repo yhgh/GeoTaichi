@@ -47,6 +47,8 @@ Have a cool example? Submit a [PR](https://github.com/Yihao-Shi/GeoTaichi/pulls)
 | ![A sphere impacting granular bed](images/mpdem1.gif) | ![Granular column impacting cubic particles](images/mpdem2.gif) | ![Box sinking into water](images/box_sinking.gif) |
 
 ## Quick start
+
+> Looking for the Warp backend? See [README_warp.md](README_warp.md) for installation, packaging, and licensing notes for the GeoWarp distribution.
 ### Installation
 #### Install from source code (recommand)
 ##### Ubuntu
