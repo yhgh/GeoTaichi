@@ -1,4 +1,7 @@
 *.vtu
+!demo/outputs/**/*.vtu
+*.vts
+!demo/outputs/**/*.vts
 !**images/*.png
 !**images/*.eps
 *.xls
@@ -10,6 +13,7 @@
 *.vtp
 *.txt
 *.svg
+!demo/outputs/**/*.svg
 *.log
 src/efem/
 src/iga/
